@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Scraper Pro - Multi-Page CSV Exporter</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        body {
+            background: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .header {
+            background: var(--primary-gradient);
+            color: white;
+            padding: 40px 0;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .header h1 {
+            font-weight: 700;
+            font-size: 2.5rem;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+        
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.12);
+        }
+        
+        .form-control, .form-select {
+            border-radius: 10px;
+            border: 2px solid #e9ecef;
+            padding: 12px 16px;
+            font-size: 0.95rem;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.2);
+        }
+        
+        .btn-primary {
+            background: var(--primary-gradient);
+            border: none;
+            border-radius: 10px;
+            padding: 12px 30px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: scale(1.02);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.6;
+            transform: none;
+        }
+        
+        .scraping-status {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background: #e7f3ff;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .progress-bar {
+            background: var(--primary-gradient);
+            height: 8px;
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+        
+        .results-section {
+            display: none;
+            margin-top: 30px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+        
+        .preview-table {
+            max-height: 400px;
+            overflow-y: auto;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        
+        .preview-table table {
+            margin-bottom: 0;
+        }
+        
+        .preview-table thead {
+            position: sticky;
+            top: 0;
+            background: #667eea;
+            color: white;
+            z-index: 10;
+        }
+        
+        .pagination-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .pagination-card {
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .pagination-card:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        
+        .pagination-card.active {
+            border-color: #667eea;
+            background: #f0f3ff;
+        }
+        
+        .pagination-card i {
+            font-size: 1.8rem;
+            color: #667eea;
+        }
+        
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header text-center">
+        <div class="container">
+            <h1><i class="fas fa-spider me-3"></i>Web Scraper Pro</h1>
+            <p>Scrape any website with pagination, load more, or infinite scroll support</p>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- Main Form -->
+        <div class="card p-4">
+            <h4 class="mb-3"><i class="fas fa-cog me-2"></i>Scraping Configuration</h4>
+            
+            <div class="row g-4">
+                <div class="col-md-12">
+                    <label class="form-label fw-bold">Target URL</label>
+                    <input type="url" id="targetUrl" class="form-control" 
+                           placeholder="https://example.com/products" 
+                           value="https://example.com">
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Max Pages</label>
+                    <input type="number" id="maxPages" class="form-control" value="5" min="1" max="50">
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Pagination Type</label>
+                    <select id="paginationType" class="form-select">
+                        <option value="url">Standard (Next Page)</option>
+                        <option value="load_more">Load More Button</option>
+                        <option value="infinite">Infinite Scroll</option>
+                    </select>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Custom Selector (Optional)</label>
+                    <input type="text" id="customSelector" class="form-control" 
+                           placeholder=".product-item, article, .post">
+                </div>
+            </div>
+            
+            <div class="mt-4 text-center">
+                <button id="scrapeBtn" class="btn btn-primary btn-lg px-5">
+                    <i class="fas fa-play me-2"></i>Start Scraping
+                </button>
+            </div>
+        </div>
+        
+        <!-- Pagination Info Cards -->
+        <div class="mt-4">
+            <h5><i class="fas fa-info-circle me-2"></i>Pagination Methods</h5>
+            <div class="pagination-options">
+                <div class="pagination-card" data-type="url">
+                    <i class="fas fa-link"></i>
+                    <h6 class="mt-2">Standard URLs</h6>
+                    <small class="text-muted">Page=1, Page=2, /page/2/</small>
+                </div>
+                <div class="pagination-card" data-type="load_more">
+                    <i class="fas fa-plus-circle"></i>
+                    <h6 class="mt-2">Load More</h6>
+                    <small class="text-muted">AJAX load more buttons</small>
+                </div>
+                <div class="pagination-card" data-type="infinite">
+                    <i class="fas fa-infinity"></i>
+                    <h6 class="mt-2">Infinite Scroll</h6>
+                    <small class="text-muted">Continuous loading pages</small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Scraping Status -->
+        <div id="scrapingStatus" class="scraping-status">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h6><i class="fas fa-spinner fa-spin me-2"></i>Scraping in progress...</h6>
+                    <p class="mb-0 text-muted" id="statusMessage">Initializing...</p>
+                </div>
+                <span class="badge bg-primary" id="progressText">0%</span>
+            </div>
+            <div class="progress mt-2">
+                <div id="progressBar" class="progress-bar" style="width: 0%;"></div>
+            </div>
+        </div>
+        
+        <!-- Results -->
+        <div id="resultsSection" class="results-section">
+            <div class="stats-grid" id="statsGrid"></div>
+            
+            <div class="card p-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5><i class="fas fa-table me-2"></i>Data Preview</h5>
+                    <div>
+                        <button id="downloadBtn" class="btn btn-success">
+                            <i class="fas fa-download me-2"></i>Download CSV (ZIP)
+                        </button>
+                    </div>
+                </div>
+                <div id="previewContainer" class="preview-table"></div>
+            </div>
+        </div>
+        
+        <!-- Loading Spinner -->
+        <div id="loadingSpinner" class="loading-spinner">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 text-muted">Processing your request...</p>
+        </div>
+    </div>
+    
+    <script>
+        let downloadUrl = '';
+        
+        // Pagination type selection
+        document.querySelectorAll('.pagination-card').forEach(card => {
+            card.addEventListener('click', function() {
+                document.querySelectorAll('.pagination-card').forEach(c => c.classList.remove('active'));
+                this.classList.add('active');
+                document.getElementById('paginationType').value = this.dataset.type;
+            });
+        });
+        
+        // Scrape button
+        document.getElementById('scrapeBtn').addEventListener('click', async function() {
+            const url = document.getElementById('targetUrl').value;
+            const maxPages = document.getElementById('maxPages').value;
+            const paginationType = document.getElementById('paginationType').value;
+            const customSelector = document.getElementById('customSelector').value;
+            
+            if (!url) {
+                alert('Please enter a valid URL');
+                return;
+            }
+            
+            // Show status
+            const statusDiv = document.getElementById('scrapingStatus');
+            statusDiv.style.display = 'block';
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressText').textContent = '0%';
+            document.getElementById('statusMessage').textContent = 'Starting scrape...';
+            
+            // Disable button
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Scraping...';
+            
+            try {
+                const response = await fetch('/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: url,
+                        max_pages: maxPages,
+                        pagination_type: paginationType,
+                        custom_selector: customSelector
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+                
+                // Update progress
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressText').textContent = '100%';
+                document.getElementById('statusMessage').textContent = 'Complete!';
+                
+                // Show results
+                displayResults(data);
+                downloadUrl = data.download_url;
+                
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-play me-2"></i>Start Scraping';
+                
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 3000);
+            }
+        });
+        
+        function displayResults(data) {
+            const section = document.getElementById('resultsSection');
+            section.style.display = 'block';
+            
+            // Stats
+            const statsHtml = `
+                <div class="stat-card">
+                    <div class="stat-number">${data.data_count}</div>
+                    <div class="stat-label">Total Items</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${data.columns.length}</div>
+                    <div class="stat-label">Columns</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${data.preview ? data.preview.length : 0}</div>
+                    <div class="stat-label">Preview Rows</div>
+                </div>
+            `;
+            document.getElementById('statsGrid').innerHTML = statsHtml;
+            
+            // Table preview
+            const preview = data.preview || [];
+            if (preview.length > 0) {
+                const columns = Object.keys(preview[0]);
+                let tableHtml = '<table class="table table-striped table-hover">';
+                tableHtml += '<thead><tr>';
+                columns.forEach(col => {
+                    tableHtml += `<th>${col}</th>`;
+                });
+                tableHtml += '</tr></thead><tbody>';
+                
+                preview.forEach(row => {
+                    tableHtml += '<tr>';
+                    columns.forEach(col => {
+                        const value = row[col] || '';
+                        const truncated = value.length > 50 ? value.substring(0, 50) + '...' : value;
+                        tableHtml += `<td>${truncated}</td>`;
+                    });
+                    tableHtml += '</tr>';
+                });
+                
+                tableHtml += '</tbody></table>';
+                document.getElementById('previewContainer').innerHTML = tableHtml;
+            }
+            
+            // Download button
+            document.getElementById('downloadBtn').onclick = function() {
+                window.location.href = downloadUrl;
+            };
+        }
+        
+        // Auto-select first pagination card
+        document.querySelector('.pagination-card').classList.add('active');
+    </script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
