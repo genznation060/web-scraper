@@ -7,6 +7,7 @@ import io
 import os
 import time
 import re
+import zipfile
 from urllib.parse import urljoin, urlparse
 
 app = Flask(__name__)
@@ -137,10 +138,14 @@ def scrape():
         if not scraped_data:
             return jsonify({'error': 'No data found on this page'}), 404
         
-        # Create CSV
+        # Create CSV - FIXED: Get all unique field names from the data
+        all_fields = set()
+        for item in scraped_data:
+            all_fields.update(item.keys())
+        fieldnames = list(all_fields)
+        
         csv_buffer = io.StringIO()
         if scraped_data:
-            fieldnames = scraped_data[0].keys()
             writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(scraped_data)
@@ -149,7 +154,6 @@ def scrape():
         
         # Create ZIP
         zip_buffer = io.BytesIO()
-        import zipfile
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             zip_file.writestr('scraped_data.csv', csv_data)
             zip_file.writestr('summary.txt', f"""
@@ -157,6 +161,7 @@ Web Scraper Report
 ==================
 URL: {url}
 Items: {len(scraped_data)}
+Fields: {', '.join(fieldnames)}
 Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}
 """)
         
