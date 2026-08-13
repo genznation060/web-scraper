@@ -2,19 +2,17 @@ from flask import Flask, render_template, request, send_file, jsonify
 from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
-import pandas as pd
-import zipfile
+import csv
 import io
 import os
 import time
-import json
-from urllib.parse import urljoin, urlparse
 import re
+from urllib.parse import urljoin, urlparse
 
 app = Flask(__name__)
 CORS(app)
 
-# Create downloads folder if not exists
+# Create downloads folder
 DOWNLOAD_FOLDER = 'downloads'
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
@@ -33,142 +31,83 @@ class WebScraper:
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Extract data - YOU CAN CUSTOMIZE THIS BASED ON YOUR NEEDS
             data = []
             
-            # Example: Extract all links, text, and metadata
-            for element in soup.find_all(['h1', 'h2', 'h3', 'p', 'a', 'img', 'div']):
-                item = {}
-                
-                # Get element tag
-                item['tag'] = element.name
-                
-                # Get text content
-                item['text'] = element.get_text(strip=True)
-                
-                # Get attributes
-                for attr in ['id', 'class', 'href', 'src', 'alt', 'title']:
-                    if element.get(attr):
-                        if attr in ['class']:
-                            item[attr] = ' '.join(element.get(attr))
-                        else:
-                            item[attr] = element.get(attr)
-                
-                # Get link if it's an anchor
-                if element.name == 'a' and element.get('href'):
-                    item['url'] = urljoin(url, element.get('href'))
-                
-                # Get image source
-                if element.name == 'img' and element.get('src'):
-                    item['image_url'] = urljoin(url, element.get('src'))
-                
-                # Only add if there's at least one piece of data
-                if item.get('text') or item.get('href') or item.get('src'):
-                    data.append(item)
+            # Get all links with text
+            for link in soup.find_all('a'):
+                href = link.get('href')
+                text = link.get_text(strip=True)
+                if href and text:
+                    data.append({
+                        'type': 'link',
+                        'text': text[:100],
+                        'url': urljoin(url, href)
+                    })
+            
+            # Get all headings
+            for heading in soup.find_all(['h1', 'h2', 'h3']):
+                text = heading.get_text(strip=True)
+                if text:
+                    data.append({
+                        'type': 'heading',
+                        'tag': heading.name,
+                        'text': text[:200]
+                    })
+            
+            # Get all paragraphs
+            for para in soup.find_all('p'):
+                text = para.get_text(strip=True)
+                if text and len(text) > 20:
+                    data.append({
+                        'type': 'paragraph',
+                        'text': text[:300]
+                    })
+            
+            # Get all images
+            for img in soup.find_all('img'):
+                src = img.get('src')
+                alt = img.get('alt', '')
+                if src:
+                    data.append({
+                        'type': 'image',
+                        'src': urljoin(url, src),
+                        'alt': alt[:100]
+                    })
             
             return data, soup
             
         except Exception as e:
             raise Exception(f"Error scraping {url}: {str(e)}")
     
-    def extract_load_more_url(self, soup, url):
-        """Try to find 'Load More' or 'Next Page' button/link"""
-        patterns = [
-            # Common Load More patterns
-            ('a', {'class': re.compile(r'load.*more|view.*more|show.*more', re.I)}),
-            ('button', {'class': re.compile(r'load.*more|view.*more|show.*more', re.I)}),
-            ('a', {'class': re.compile(r'next|pagination|page', re.I)}),
-            ('a', {'rel': 'next'}),
-            ('button', {'data-action': 'load-more'}),
-            ('div', {'class': re.compile(r'load.*more|view.*more', re.I)}),
-        ]
-        
-        for tag, attrs in patterns:
-            elements = soup.find_all(tag, attrs=attrs)
-            for el in elements:
-                # Check for onclick or data-* attributes with URL
-                if el.get('onclick'):
-                    match = re.search(r"['\"]([^'\"]+\.(php|html|aspx|jsp|do))['\"]", el['onclick'])
-                    if match:
-                        return urljoin(url, match.group(1))
-                
-                # Check for data-url or data-href
-                for attr in ['data-url', 'data-href', 'data-page', 'data-link']:
-                    if el.get(attr):
-                        return urljoin(url, el.get(attr))
-                
-                # Check if it's a link
-                if el.name == 'a' and el.get('href'):
-                    return urljoin(url, el.get('href'))
-                
-                # Check if it's a form with action
-                if el.name == 'form' and el.get('action'):
-                    return urljoin(url, el.get('action'))
-        
-        return None
-    
-    def scrape_with_pagination(self, base_url, max_pages=10, pagination_type='url', selector=None):
-        """Scrape multiple pages with different pagination types"""
+    def scrape_with_pagination(self, base_url, max_pages=3, pagination_type='url'):
+        """Scrape multiple pages"""
         all_data = []
         current_url = base_url
         page_count = 0
         
         while page_count < max_pages:
             try:
-                # Scrape current page
                 page_data, soup = self.scrape_page(current_url)
                 if page_data:
                     all_data.extend(page_data)
                 
                 page_count += 1
                 
-                # Find next URL based on pagination type
+                # Find next URL
                 next_url = None
-                
                 if pagination_type == 'url':
-                    # Look for standard pagination links
                     for link in soup.find_all('a'):
-                        if link.get('href'):
-                            text = link.get_text(strip=True).lower()
-                            if text in ['next', 'next →', '→', '»', 'next page', 'load more']:
+                        text = link.get_text(strip=True).lower()
+                        if text in ['next', 'next →', '→', '»', 'next page']:
+                            if link.get('href'):
                                 next_url = urljoin(current_url, link.get('href'))
                                 break
                 
-                elif pagination_type == 'load_more':
-                    # Look for load more button
-                    next_url = self.extract_load_more_url(soup, current_url)
-                    if not next_url:
-                        # Try JavaScript onclick
-                        for btn in soup.find_all(['button', 'a']):
-                            onclick = btn.get('onclick', '')
-                            if 'load' in onclick.lower() or 'more' in onclick.lower():
-                                match = re.search(r"['\"]([^'\"]+)['\"]", onclick)
-                                if match:
-                                    next_url = urljoin(current_url, match.group(1))
-                                    break
-                
-                elif pagination_type == 'infinite':
-                    # For infinite scroll, try to find next page URL in data attributes
-                    next_data = soup.find('div', {'data-next-page': True})
-                    if next_data and next_data.get('data-next-page'):
-                        next_url = urljoin(current_url, next_data.get('data-next-page'))
-                    else:
-                        # Check for JSON-LD or data attributes
-                        script = soup.find('script', {'type': 'application/json'})
-                        if script:
-                            try:
-                                data = json.loads(script.string)
-                                if 'next' in data:
-                                    next_url = urljoin(current_url, data['next'])
-                            except:
-                                pass
-                
-                # If no more pages, break
                 if not next_url or next_url == current_url:
                     break
                 
                 current_url = next_url
-                time.sleep(1)  # Be polite to the server
+                time.sleep(1)
                 
             except Exception as e:
                 print(f"Error on page {page_count}: {str(e)}")
@@ -185,85 +124,53 @@ def scrape():
     try:
         data = request.json
         url = data.get('url')
-        max_pages = int(data.get('max_pages', 10))
+        max_pages = int(data.get('max_pages', 3))
         pagination_type = data.get('pagination_type', 'url')
-        custom_selector = data.get('custom_selector', '')
         
         if not url:
             return jsonify({'error': 'URL is required'}), 400
         
-        # Create scraper instance
-        scraper = WebScraper()
-        
         # Scrape data
-        scraped_data = scraper.scrape_with_pagination(
-            url, 
-            max_pages, 
-            pagination_type,
-            custom_selector
-        )
+        scraper = WebScraper()
+        scraped_data = scraper.scrape_with_pagination(url, max_pages, pagination_type)
         
         if not scraped_data:
-            return jsonify({'error': 'No data found'}), 404
+            return jsonify({'error': 'No data found on this page'}), 404
         
-        # Convert to DataFrame
-        df = pd.DataFrame(scraped_data)
-        
-        # Create CSV in memory
+        # Create CSV
         csv_buffer = io.StringIO()
-        df.to_csv(csv_buffer, index=False)
+        if scraped_data:
+            fieldnames = scraped_data[0].keys()
+            writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(scraped_data)
+        
         csv_data = csv_buffer.getvalue()
         
-        # Create ZIP file in memory
+        # Create ZIP
         zip_buffer = io.BytesIO()
+        import zipfile
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            # Add main CSV
             zip_file.writestr('scraped_data.csv', csv_data)
-            
-            # Add summary file
-            summary = f"""
-            Web Scraper Summary Report
-            ============================
-            Source URL: {url}
-            Pagination Type: {pagination_type}
-            Pages Scraped: {len(scraped_data) // 10 + 1 if scraped_data else 0}
-            Total Items: {len(scraped_data)}
-            Columns: {', '.join(df.columns)}
-            Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}
-            """
-            zip_file.writestr('summary.txt', summary)
+            zip_file.writestr('summary.txt', f"""
+Web Scraper Report
+==================
+URL: {url}
+Items: {len(scraped_data)}
+Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}
+""")
         
         zip_buffer.seek(0)
         
-        # Save to file (optional, for download)
-        timestamp = int(time.time())
-        zip_filename = f'scraped_data_{timestamp}.zip'
-        zip_path = os.path.join(DOWNLOAD_FOLDER, zip_filename)
-        
-        with open(zip_path, 'wb') as f:
-            f.write(zip_buffer.getvalue())
-        
-        return jsonify({
-            'success': True,
-            'data_count': len(scraped_data),
-            'columns': list(df.columns),
-            'preview': df.head(10).to_dict('records'),
-            'download_url': f'/download/{zip_filename}'
-        })
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f'scraped_data_{int(time.time())}.zip'
+        )
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/download/<filename>')
-def download(filename):
-    try:
-        return send_file(
-            os.path.join(DOWNLOAD_FOLDER, filename),
-            as_attachment=True,
-            download_name=filename
-        )
-    except Exception as e:
-        return jsonify({'error': str(e)}), 404
-
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000)
